@@ -8,6 +8,7 @@ The three styles differ in **where the pointers start** and **how they move**.
 1. Comparing the two ends, or searching pairs in sorted data → **Opposite ends**
 2. Filtering or rearranging in place, or a linked list cycle/middle → **Same direction (fast and slow)**
 3. Only 3 categories, or a pivot partition in a single pass → **Dutch flag**
+4. Count (not just find) pairs in a sorted array with repeated values → **Group counting** (section 4)
 
 ---
 
@@ -153,6 +154,124 @@ while (mid <= high) {
 
 ---
 
+## 4. Counting Pairs When Values Repeat (Group Counting)
+
+An extension of **opposite ends**. Use it when the question asks for the **number** of pairs (not just whether one exists) and the sorted array has **repeated values**.
+
+**Why the usual rule fails:** with distinct values, each value has exactly one partner, so moving either pointer at a match is safe. With duplicates, one value can have many partners, and many copies can share the same partner. Test on `[1,1,1,1]`, target 2 (expected answer **6**):
+
+| What moves at a match | Pairs counted | Count |
+|---|---|---|
+| `right--` only | (0,3), (0,2), (0,1) | 3 |
+| `left++` only | (0,3), (1,3), (2,3) | 3 (different pairs) |
+| both pointers | (0,3), (1,2) | 2 |
+
+**Mindset shift:** at a match, "which pointer do I move?" is the wrong question. Treat **equal values as a group**: count the whole group at once, then jump both pointers past it.
+
+### The two counting rules
+
+- **Ends equal → `n × (n − 1) / 2`**, where `n = right - left + 1`. Everything between two equal ends (in a sorted array) is the same value, so every pair works.
+  *Real-life picture:* handshakes. 5 people each shake hands once with everyone else: 4 + 3 + 2 + 1 = 10. Check: 4 equal elements give 4 × 3 / 2 = 6.
+- **Ends different → `leftCopies × rightCopies`.** Each left copy pairs with each right copy.
+  *Real-life picture:* 2 boys and 2 girls, every boy dances with every girl: 2 × 2 = 4. Boys don't pair with boys, because the sum of two left values is not the target.
+
+**Spot it by:** "count the number of pairs", sorted array, "may contain duplicates", target sum.
+
+**Memory hook:** *"Count the crowd, then jump the crowd."*
+
+### Code
+
+```java
+int countPairs(int[] arr, int target) {
+    int left = 0, right = arr.length - 1;
+    int count = 0;
+
+    while (left < right) {
+        int sum = arr[left] + arr[right];
+
+        if (sum < target) {
+            left++;                               // need a bigger sum
+        } else if (sum > target) {
+            right--;                              // need a smaller sum
+        } else {                                  // sum == target
+            if (arr[left] == arr[right]) {
+                // everything from left to right is the same value
+                int n = right - left + 1;
+                count += n * (n - 1) / 2;
+                break;                            // every pair in that stretch is counted, nothing left
+            }
+
+            int leftVal = arr[left], rightVal = arr[right];
+            int leftCount = 0, rightCount = 0;
+
+            while (left < right && arr[left] == leftVal) {    // count copies on the left, and jump past them
+                leftCount++;
+                left++;
+            }
+            while (right >= left && arr[right] == rightVal) { // count copies on the right, and jump past them
+                rightCount++;
+                right--;
+            }
+            count += leftCount * rightCount;
+        }
+    }
+    return count;
+}
+```
+
+### Walkthrough: `[1,1,2,2,3,3]`, target 4
+
+| Step | left → right | sum | What happens | count |
+|---|---|---|---|---|
+| 1 | 0 → 5 (values 1, 3) | 4 | Match, ends differ. Two 1s, two 3s: add 2 × 2 = 4. Jump: left → 2, right → 3 | 4 |
+| 2 | 2 → 3 (values 2, 2) | 4 | Match, ends equal. n = 2, add 2 × 1 / 2 = 1. Stop | **5** |
+
+Check by hand: (1,3) gives 4 combinations, (2,2) gives 1 combination, total **5**.
+
+### The counting block, line by line
+
+```java
+int leftVal = arr[left], rightVal = arr[right];   // save the values: left/right are about to move
+int leftCount = 0, rightCount = 0;
+
+while (left < right && arr[left] == leftVal) {    // loop 1: count the left group, and step past it
+    leftCount++;
+    left++;
+}
+while (right >= left && arr[right] == rightVal) { // loop 2: count the right group, and step past it
+    rightCount++;
+    right--;
+}
+count += leftCount * rightCount;
+```
+
+After the block, `left` and `right` sit on the first values that are **not** part of either group, so no pair is ever counted twice.
+
+### Why loop 2 uses `right >= left` (not `right > left`)
+
+Think of elements as seats in a row, with the **left loop going first**:
+
+- **Loop 1** must **not** take the seat at `right`, because that seat belongs to the right group. So its condition is strict: `left < right`.
+- **Loop 2** goes second. `left` now points at the first seat the left group did **not** take. That seat is still unclaimed, so the right group may take it. So its condition is inclusive: `right >= left`.
+
+Proof with `[1,3]`, target 4 (expected 1): after loop 1, `left = 1 = right`, and that element is the 3 (it belongs to the right group). With `>=` loop 2 counts it, so `count = 1 × 1 = 1`. With `>` loop 2 never runs, `rightCount = 0`, and the answer is a wrong 0.
+
+It isn't only the `left == right` case. In `[1,3,3]`, target 4 (expected 2), loop 2 must count the 3 at index 1 as well, which only happens with `>=`.
+
+*Note:* in this branch the two ends have different values, so loop 2 would stop on its own at the last left-group element. The guard is mostly defensive, but if you write it, it must be `>=`.
+
+### Complexity
+
+**O(n) time** (each pointer only moves inward, never back) and **O(1) space**. With large inputs `n * (n - 1) / 2` can overflow `int` (n = 100,000 already does), so use `long` for `count` and the product when the problem allows.
+
+### Self-checks (trace by hand)
+
+1. `[1,3]`, target 4: after the counting block, what are `left`, `right`, `leftCount`, `rightCount`, `count`? (Expect `1, 0, 1, 1, 1`.)
+2. `[1,3,3]`, target 4: run the block once with `>=` and once with `>`. One gives 2, the other gives 1.
+3. `[1,2,2,3,3,3]`, target 5: work out the expected answer first by listing the value pairs (expect 6), then trace the code.
+
+---
+
 ## Complexity (all examples above)
 
 | Style | Time | Space | Why |
@@ -161,6 +280,7 @@ while (mid <= high) {
 | Reader and writer | O(n) | O(1) | One pass, only two index variables |
 | Tortoise and hare | O(n) | O(1) | Fast reaches the end in at most n/2 steps |
 | Dutch flag | O(n) | O(1) | Each element is examined once; `mid` never goes backward |
+| Group counting (pairs with duplicates) | O(n) | O(1) | Each pointer only moves inward; every group of equal values is jumped over once |
 
 *Exception:* 3Sum is O(n²) because the two-pointer scan sits **inside** a `for` loop (multiply, not add).
 
@@ -172,6 +292,8 @@ while (mid <= high) {
 - **Sentinel values that collide with real data:** starting `prevNumber = 0` broke when the array's first real value was 0. Compare against an actual array position instead, such as `arr[count - 1]`.
 - **Duplicate results in 3Sum:** after a match, skip repeated values at `i`, `j` and `k`, not just at `i`.
 - **Time vs space with recursion:** total work across all levels is time. The deepest chain of calls alive at once is space.
+- **Counting pairs with duplicates:** moving only one pointer (or both) at a match always misses pairs when values repeat. Count the whole group of equal values at once, then jump past it.
+- **Inclusive vs strict loop bounds in two loops that share a boundary:** the loop that runs second may need `>=` because the first loop already stopped on an element the second one still owns.
 
 ---
 
@@ -186,4 +308,5 @@ while (mid <= high) {
 | Same direction (tortoise and hare) | Linked List Cycle (#141), Middle of the Linked List (#876) | LeetCode |
 | Dutch flag | Sort Colors (#75) | LeetCode |
 | Dutch flag | Sort an array of 0s, 1s and 2s | TUF A2Z (Arrays), GeeksforGeeks |
+| Group counting | Count pairs with a given sum in a sorted array with duplicates (re-attempt without looking) | Brought by Harish, platform not named |
 | All styles | Two-Pointer section of the Array topic | RisingBrain (risingbrain.org/sheet) |
